@@ -3,8 +3,6 @@ from fastapi.params import Body
 from app.Validation.user import User
 from app.db.db import connection
 from app.db.db import db, User as user_schema
-from sqlalchemy import select
-from pydantic import BaseModel
 
 app = FastAPI()
 connection()
@@ -19,24 +17,22 @@ def root():
 def get_items():
     return db.query(user_schema).all()
 
-class Test(BaseModel):
-    text: str
-    syn: str
 
 @app.post('/create')
-def create_user(payload: Test):
+def create_user(payload: User):
     val = payload.mail
-    exists = db.execute(select(user_schema).where(user_schema.mail == val)).first()
+    # exists = db.execute(select(user_schema).where(user_schema.mail == val)).first()
+    exists = db.query(user_schema).filter(user_schema.mail == val).first()
     if exists:
         # return Response(content='Already exists!!, Please create a new one!!', status_code=409, media_type='plain/text')
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='Already exists!!, Please create a new one!!')
     else:
-        # print(**payload.model_dump())
-        new_user = user_schema(name = payload.name, mail = payload.mail, password = payload.password, age = payload.age)
+        # new_user = user_schema(name = payload.name, mail = payload.mail, password = payload.password, age = payload.age)
+        new_user = user_schema(**payload.model_dump())
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
-        return Response(content='User added!!', status_code=201, media_type='plain/text')
+        return new_user, Response(content='User added!!', status_code=status.HTTP_201_CREATED, media_type='plain/text')
     
 @app.get('/{name}')
 def get_id(name: str): 
@@ -46,10 +42,26 @@ def get_id(name: str):
     else:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
-@app.get('/fault')
-def fault_eg():
-    raise HTTPException.status_code(status_code=500)
+@app.delete('/{name}', status_code = status.HTTP_200_OK)
+def delete_user(name: str):
+    user = db.query(user_schema).filter(user_schema.name == name).first()
+    if user:
+        db.delete(user)
+        db.commit()
+        return user
+    else:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='User not found!!')
+
+@app.put('/{name}', status_code = status.HTTP_202_ACCEPTED)
+def update_user(name: str, alt: str):
+    try:
+        user = db.query(user_schema).filter(user_schema.name == name).first()
+        user.name = alt
+        return user
+    except Exception as e:
+        return e
     
+ 
 
 @app.post('/test')
 def post_request(payload : dict = Body(...)):
